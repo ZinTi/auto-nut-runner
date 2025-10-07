@@ -1,3 +1,11 @@
+# directories
+build/
+.idea/
+MDK-ARM
+
+# files
+CMakeLists.txt.user
+
 # Prerequisites
 *.d
 
