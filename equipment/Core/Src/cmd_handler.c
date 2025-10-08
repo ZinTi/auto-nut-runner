@@ -3,13 +3,16 @@
 #include <string.h>
 #include <stdlib.h>
 #include "led.h"
-#include "active_buzzer.h"
-// #include "gear_motor.h"
-#include "motor_controller.h"
+#include "buzzer.h"
+#include "stepper.h"
+#include "gear_motor.h"
 #include "config.h"
 #include "echo.h"
 
 extern UART_HandleTypeDef huart1;
+extern stepper_t turntable;		// 转台步进电机
+extern stepper_t lifter;		// 升降步进电机
+extern gear_motor_t gear_motor;				// 拧螺丝电机
 
 void cmd_dispatcher(const char* cmd) {
 	if('^' != cmd[0]){ // 不完整指令或非指令
@@ -68,7 +71,7 @@ void cmd_process_led(const char* cmd){
 			uint8_t cnt = (int8_t)atoi(cmd+1);
 			led_flash(cnt);
 			char str[25];
-			snprintf(str, 25, "led flash:%d.\n", cnt);
+			snprintf(str, 25, "led flash:%u.\n", cnt);
 			echo_str(str);
 			break;
 		}
@@ -82,30 +85,30 @@ void cmd_process_led(const char* cmd){
 void cmd_process_buzzer(const char* cmd){
 	switch(cmd[0]){
 		case 'O':{
-			active_buzzer_on();
+			buzzer_on();
 			echo_str("buzzer on.\n");
 			break;
 		}
 		case 'F':{
-			active_buzzer_off();
+			buzzer_off();
 			echo_str("buzzer off.\n");
 			break;
 		}
 		case 'T':{
-			active_buzzer_toggle();
+			buzzer_toggle();
 			echo_str("buzzer toggle.\n");
 			break;
 		}
 		case 'R':{
-			active_buzzer_rhythm(1000); // 蜂鸣器播放 1s 节奏音
+			buzzer_rhythm(1000); // 蜂鸣器播放 1s 节奏音
 			echo_str("buzzer rhythm.\n");
 			break;
 		}
 		case 'B':{
 			uint8_t cnt = (int8_t)atoi(cmd+1);
-			active_buzzer_beep(cnt);
+			buzzer_beep(cnt);
 			char str[25];
-			snprintf(str, 25, "buzzer beep:%d.\n", cnt);
+			snprintf(str, 25, "buzzer beep:%u.\n", cnt);
 			echo_str(str);
 			break;
 		}
@@ -121,7 +124,7 @@ void cmd_process_config(const char* cmd){
 			char str[50];
 			uint16_t ppr_t = get_ppr('t');
 			uint16_t ppr_l = get_ppr('l');
-			snprintf(str, 50, "T PPR:%d, L PPR:%d.", ppr_t, ppr_l);
+			snprintf(str, 50, "T PPR:%u, L PPR:%u.", ppr_t, ppr_l);
 			echo_str(str);
 			break;
 		}
@@ -138,9 +141,9 @@ void cmd_process_config(const char* cmd){
 			uint8_t ret = set_ppr('t', ppr);
 			char str[25];
 			if(1 == ret){
-				snprintf(str, 25, "T PPR ok:%d.\n", get_ppr('t'));
+				snprintf(str, 25, "T PPR ok:%u.\n", ppr);
 			} else {
-				snprintf(str, 25, "T PPR err:%d.\n", get_ppr('t'));
+				snprintf(str, 25, "T PPR err:%u.\n", ppr);
 			}
 			echo_str(str);
 			break;
@@ -150,9 +153,9 @@ void cmd_process_config(const char* cmd){
 			uint8_t ret = set_ppr('l', ppr);
 			char str[25];
 			if(1 == ret){
-				snprintf(str, 25, "L PPR ok:%d.\n", get_ppr('l'));
+				snprintf(str, 25, "L PPR ok:%u.\n", ppr);
 			} else {
-				snprintf(str, 25, "L PPR err:%d.\n", get_ppr('l'));
+				snprintf(str, 25, "L PPR err:%u.\n", ppr);
 			}
 			echo_str(str);
 			break;
@@ -164,20 +167,27 @@ void cmd_process_config(const char* cmd){
 }
 
 void cmd_process_turntable(const char* cmd){
+	// 如果有新指令，先中止当前运动
+    if(turntable.is_active){
+        stepper_abort(&turntable);
+    }
+	
 	switch(cmd[0]){
 		case 'F':{
 			float degrees = (float)atof(cmd + 1);
-			mctl_move_turntable(degrees, DM542_DIR_FORWARD);
+			uint32_t pulse_cnt = stepper_pulse_needed(get_ppr('t'), degrees);
+			stepper_move(&turntable, pulse_cnt, DM542_DIR_FORWARD);
 			char str[25];
-			snprintf(str, 25, "TF:%f.\n", degrees);
+			snprintf(str, 25, "TF:%lu.\n", pulse_cnt);
 			echo_str(str);
 			break;
 		}
 		case 'R':{
 			float degrees = (float)atof(cmd + 1);
-            mctl_move_turntable(degrees, DM542_DIR_REVERSE);
+			uint32_t pulse_cnt = stepper_pulse_needed(get_ppr('t'), degrees);
+			stepper_move(&turntable, pulse_cnt, DM542_DIR_REVERSE);
 			char str[25];
-			snprintf(str, 25, "TR:%f.\n", degrees);
+			snprintf(str, 25, "TR:%lu.\n", pulse_cnt);
 			echo_str(str);
 			break;
 		}
@@ -188,20 +198,27 @@ void cmd_process_turntable(const char* cmd){
 }
 
 void cmd_process_lifter(const char* cmd){
+    // 如果有新指令，先中止当前运动
+    if(lifter.is_active){
+        stepper_abort(&lifter);
+    }
+	
 	switch(cmd[0]){
 		case 'F':{
 			float degrees = (float)atof(cmd+1);
-			mctl_move_lifter(degrees, DM542_DIR_FORWARD);
+			uint32_t pulse_cnt = stepper_pulse_needed(get_ppr('l'), degrees);
+			stepper_move(&lifter, pulse_cnt, DM542_DIR_FORWARD);
 			char str[25];
-			snprintf(str, 25, "LF:%f.\n", degrees);
+			snprintf(str, 25, "LF:%lu.\n", pulse_cnt);
 			echo_str(str);
 			break;
 		}
 		case 'R':{
 			float degrees = (float)atof(cmd+1);
-            mctl_move_lifter(degrees, DM542_DIR_REVERSE);
+			uint32_t pulse_cnt = stepper_pulse_needed(get_ppr('l'), degrees);
+			stepper_move(&lifter, pulse_cnt, DM542_DIR_REVERSE);
 			char str[25];
-			snprintf(str, 25, "LR:%f.\n", degrees);
+			snprintf(str, 25, "LR:%lu.\n", pulse_cnt);
 			echo_str(str);
 			break;
 		}
@@ -214,16 +231,21 @@ void cmd_process_lifter(const char* cmd){
 void cmd_process_brake(const char* cmd){
 	switch(cmd[0]){
 		case 'A':{
-			mctl_brake();
-			echo_str("mctl brake cmd.");
+            stepper_abort(&turntable);
+            stepper_abort(&lifter);
+            echo_str("All brake applied.\n");
 			break;
 		}
 		case 'T':{
-			echo_str("t brake cmd.");
+            // 转台急停
+            stepper_abort(&turntable);
+            echo_str("Turntable brake applied.\n");
 			break;
 		}
 		case 'L':{
-			echo_str("l brake cmd.");
+            // 升降急停
+            stepper_abort(&lifter);
+            echo_str("Lifter brake applied.\n");
 			break;
 		}
 		default:{

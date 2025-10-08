@@ -1,6 +1,7 @@
 #include "echo.h"
 #include <stm32f1xx_hal.h>
 #include <string.h>
+#include <stdint.h>
 
 extern UART_HandleTypeDef huart1;
 

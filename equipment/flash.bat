@@ -1,0 +1,1 @@
+openocd -f "%OPENOCD_HOME%/share/openocd/scripts/interface/stlink.cfg" -f "%OPENOCD_HOME%/share/openocd/scripts/target/stm32f1x.cfg" -c "program build/auto_nut_runner.hex verify reset exit"

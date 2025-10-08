@@ -25,7 +25,8 @@
 #include "config.h"
 #include "cmd_handler.h"
 #include "led.h"
-#include "motor_controller.h"
+#include "stepper.h"
+#include "gear_motor.h"
 
 /* USER CODE END Includes */
 
@@ -46,6 +47,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart1;
 
@@ -57,9 +59,9 @@ volatile char command[CMD_MAX_SIZE];	// 存储完整指令
 volatile uint8_t rx_index = 0;			// 缓冲区索引
 volatile uint8_t cmd_received = 0;
 
-
-dm542_motor_t stepper_turntable;	// 转台步进电机
-dm542_motor_t stepper_lifter;		// 升降步进电机
+stepper_t turntable;	// 转台步进电机
+stepper_t lifter;		// 升降步进电机
+gear_motor_t gear_motor;	// 拧螺丝电机
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -67,6 +69,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -109,11 +112,20 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM1_Init();
   MX_USART1_UART_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   	// 启动串口接收中断
 	HAL_UART_Receive_IT(&huart1, (uint8_t*)&rx_buffer, 1);	// 启动第1次接收
 	
-	mctl_init(&htim1);	// 初始化
+	// 电机初始化
+	stepper_init(&turntable, &htim1, STP_T_CHANNEL, STP_T_ENA_PORT, STP_T_ENA_PIN, STP_T_DIR_PORT, STP_T_DIR_PIN);
+	stepper_init(&lifter, &htim2, STP_L_CHANNEL, STP_L_ENA_PORT, STP_L_ENA_PIN, STP_L_DIR_PORT, STP_L_DIR_PIN);
+	stepper_set_arr(&turntable, 1000-1); // 自动重装寄存器，设置脉冲周期，影响脉冲发送频率快慢，即步进电机速度快慢
+	stepper_set_arr(&lifter, 1000-1);
+	UNUSED(gear_motor);
+	
+	HAL_TIM_Base_Start_IT(&htim1); // 启动转台定时器中断
+	HAL_TIM_Base_Start_IT(&htim2); // 启动升降定时器中断
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -128,6 +140,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	  
   }
   /* USER CODE END 3 */
 }
@@ -194,7 +207,7 @@ static void MX_TIM1_Init(void)
   htim1.Instance = TIM1;
   htim1.Init.Prescaler = 72-1;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 999-1;
+  htim1.Init.Period = 1000-1;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
@@ -211,10 +224,6 @@ static void MX_TIM1_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_TIM_OnePulse_Init(&htim1, TIM_OPMODE_SINGLE) != HAL_OK)
-  {
-    Error_Handler();
-  }
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
@@ -222,17 +231,13 @@ static void MX_TIM1_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
+  sConfigOC.Pulse = 1000/2;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
   sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
   if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
   }
@@ -251,6 +256,65 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 2 */
   HAL_TIM_MspPostInit(&htim1);
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 72-1;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 1000-1;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 1000/2;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
 
 }
 
@@ -309,13 +373,13 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(active_buzzer_GPIO_Port, active_buzzer_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(buzzer_GPIO_Port, buzzer_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, DM542M1_ENA_Pin|DM542M1_DIR_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOB, T_ENA_Pin|T_DIR_Pin|L_DIR_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, DM542M2_ENA_Pin|DM542M2_DIR_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(L_ENA_GPIO_Port, L_ENA_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : PC13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;
@@ -324,16 +388,16 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : active_buzzer_Pin */
-  GPIO_InitStruct.Pin = active_buzzer_Pin;
+  /*Configure GPIO pin : buzzer_Pin */
+  GPIO_InitStruct.Pin = buzzer_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(active_buzzer_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(buzzer_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : DM542M1_ENA_Pin DM542M1_DIR_Pin DM542M2_ENA_Pin DM542M2_DIR_Pin */
-  GPIO_InitStruct.Pin = DM542M1_ENA_Pin|DM542M1_DIR_Pin|DM542M2_ENA_Pin|DM542M2_DIR_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+  /*Configure GPIO pins : T_ENA_Pin T_DIR_Pin L_ENA_Pin L_DIR_Pin */
+  GPIO_InitStruct.Pin = T_ENA_Pin|T_DIR_Pin|L_ENA_Pin|L_DIR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
@@ -371,14 +435,14 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
  * @brief 实现定时器中断回调函数
  */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-	if(htim == &htim1){	// 定时器1
-		// update_current_ms();	// +1 ms
-		
-		// 检测是否在单脉冲模式下完成
-        if (!(htim1.Instance->CR1 & TIM_CR1_CEN)) {
-            // 可以在这里添加完成回调逻辑
-        }
-	}
+    // 转台电机中断
+    if(htim == turntable.htim){
+        stepper_update_callback(&turntable);
+    }
+    // 升降电机中断
+    else if(htim == lifter.htim){
+        stepper_update_callback(&lifter);
+    }
 	
 }
 /* USER CODE END 4 */

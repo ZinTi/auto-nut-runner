@@ -59,16 +59,16 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define active_buzzer_Pin GPIO_PIN_2
-#define active_buzzer_GPIO_Port GPIOA
-#define DM542M1_ENA_Pin GPIO_PIN_0
-#define DM542M1_ENA_GPIO_Port GPIOB
-#define DM542M1_DIR_Pin GPIO_PIN_1
-#define DM542M1_DIR_GPIO_Port GPIOB
-#define DM542M2_ENA_Pin GPIO_PIN_10
-#define DM542M2_ENA_GPIO_Port GPIOB
-#define DM542M2_DIR_Pin GPIO_PIN_11
-#define DM542M2_DIR_GPIO_Port GPIOB
+#define buzzer_Pin GPIO_PIN_2
+#define buzzer_GPIO_Port GPIOA
+#define T_ENA_Pin GPIO_PIN_0
+#define T_ENA_GPIO_Port GPIOB
+#define T_DIR_Pin GPIO_PIN_1
+#define T_DIR_GPIO_Port GPIOB
+#define L_ENA_Pin GPIO_PIN_10
+#define L_ENA_GPIO_Port GPIOB
+#define L_DIR_Pin GPIO_PIN_11
+#define L_DIR_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
